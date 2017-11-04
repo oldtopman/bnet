@@ -197,6 +197,7 @@ size_t serialize_packet(void ** dst, struct msg_header src)
         for(size_t i = 0; i < src.count; i++){
                 free(data_data[i]);
         }
+        free(data_data);
 
         *dst = packet_data;
         return packet_size;
@@ -357,7 +358,7 @@ int main(int argc, char* argv[])
         mhead2.data = malloc(sizeof(void*) * 1);
         mhead2.data[0] = &mcomp2;
         
-        size += sizeof(uint16_t) * 2;
+        size += sizeof(uint16_t) * 3;
         size += sizeof(uint64_t) * 2;
         size += sizeof(uint16_t) * 2;
         size += strlen(mcomp.hostnames[0]) + 1;
@@ -396,6 +397,15 @@ int main(int argc, char* argv[])
         printf("size: %d\ncount: %d\nids[0]: %d\n", decmhead2.size, decmhead2.count, decmhead2.ids[0]);
         struct msg_computer* mcp2 = decmhead2.data[0];
         printf("uptime: %d\nupdate: %d\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mcp2->uptime, mcp2->update, mcp2->distance, mcp2->hostname_count, mcp2->hostnames[0], mcp2->name, mcp2->msg);
+
+        //Free data from the manual generation
+        free(mhead.ids);
+        free(mhead2.ids);
+        free(mcomp.hostnames);
+        free(mcomp2.hostnames);
+        free(mhead2.data);
+        free(data);
+        free(data2);
 
         free_packet(&decmhead2);
         free_packet(&decmhead);
