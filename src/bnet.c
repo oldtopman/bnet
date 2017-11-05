@@ -17,7 +17,7 @@ struct msg_header{
         uint16_t size;
         uint16_t count;
         uint16_t* ids;
-        void ** data;
+        char ** data;
 };
 
 struct msg_computer{
@@ -67,7 +67,7 @@ void free_packet(struct msg_header* mhead)
         for(size_t i = 0; i < mhead->count; i++){
                 switch(mhead->ids[i]){
                 case 2:
-                        free_computer(mhead->data[i]);
+                        free_computer((struct msg_computer*)mhead->data[i]);
                         free(mhead->data[i]);
                         break;
                 default:
@@ -79,12 +79,12 @@ void free_packet(struct msg_header* mhead)
         free(mhead->data);
 }
 
-size_t serialize_computer(void ** dst, struct msg_computer* src)
+size_t serialize_computer(char** dst, struct msg_computer* src)
 {
         size_t hcount = src->hostname_count;
         size_t offset = 0;
         size_t size = 0;
-        void * data;
+        char* data;
 
         size += sizeof(uint64_t) * 2;
         size += sizeof(uint16_t) * 2;
@@ -118,16 +118,16 @@ size_t serialize_computer(void ** dst, struct msg_computer* src)
         return size;
 }
 
-size_t serialize_packet(void ** dst, struct msg_header src)
+size_t serialize_packet(char ** dst, struct msg_header src)
 {
         uint16_t tmp; //Used when changing byte order
         size_t offset;
         size_t packet_size = 0;
         size_t header_size = 0;
         size_t* data_size;
-        void* packet_data;
-        void* header_data;
-        void** data_data;
+        char* packet_data;
+        char* header_data;
+        char** data_data;
         data_size = malloc((sizeof *data_size) * src.count);
         data_data = malloc((sizeof *data_data) * src.count);
         if(data_size == NULL || data_data == NULL){
@@ -159,7 +159,7 @@ size_t serialize_packet(void ** dst, struct msg_header src)
         for(uint16_t i = 0; i < src.count; i++){
                 switch(src.ids[i]){
                 case 2:
-                        data_size[i] = serialize_computer(&data_data[i], src.data[i]);
+                        data_size[i] = serialize_computer(&data_data[i], (struct msg_computer*)src.data[i]);
                         break;
                 default:
                         data_size[i] = 0;
@@ -203,7 +203,7 @@ size_t serialize_packet(void ** dst, struct msg_header src)
         return packet_size;
 }
 
-size_t deserialize_computer(void** dst_ptr, void* src)
+size_t deserialize_computer(char** dst_ptr, char* src)
 {
         struct msg_computer* dst = malloc(sizeof *dst);
 
@@ -238,12 +238,12 @@ size_t deserialize_computer(void** dst_ptr, void* src)
         offset += get_string(&dst->name, src + offset);
         offset += get_string(&dst->msg, src + offset);
 
-        *dst_ptr = dst;
+        *dst_ptr = (char*)dst;
         return offset;
 }
 
 
-struct msg_header deserialize_packet(void* data)
+struct msg_header deserialize_packet(char* data)
 {
         struct msg_header mhead;
         if(data == NULL){
@@ -356,7 +356,7 @@ int main(int argc, char* argv[])
         char msg2[] = "me22age - 2rial";
         mcomp2.msg = msg2;
         mhead2.data = malloc(sizeof(void*) * 1);
-        mhead2.data[0] = &mcomp2;
+        mhead2.data[0] = (char*)&mcomp2;
         
         size += sizeof(uint16_t) * 3;
         size += sizeof(uint64_t) * 2;
@@ -365,7 +365,7 @@ int main(int argc, char* argv[])
         size += strlen(mcomp.name) + 1;
         size += strlen(mcomp.msg) + 1;
 
-        void * data = malloc(size);
+        char * data = malloc(size);
         if(data == NULL){
                 return 1;
         }
@@ -382,21 +382,21 @@ int main(int argc, char* argv[])
         offset += add_data(data + offset, mcomp.name, strlen(mcomp.name) + 1);
         offset += add_data(data + offset, mcomp.msg, strlen(mcomp.msg) + 1);
 
-        void * data2;
-        size_t size2 = serialize_packet(&data2, mhead2);
+        char * data2;
+        serialize_packet(&data2, mhead2);
 
         //deserialize from data
         struct msg_header decmhead = deserialize_packet(data);
         printf("size: %d\ncount: %d\nids[0]: %d\n", decmhead.size, decmhead.count, decmhead.ids[0]);
-        struct msg_computer* mcp = decmhead.data[0];
-        printf("uptime: %d\nupdate: %d\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mcp->uptime, mcp->update, mcp->distance, mcp->hostname_count, mcp->hostnames[0], mcp->name, mcp->msg);
+        struct msg_computer* mcp = (struct msg_computer*)decmhead.data[0];
+        printf("uptime: %llu\nupdate: %llu\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mcp->uptime, mcp->update, mcp->distance, mcp->hostname_count, mcp->hostnames[0], mcp->name, mcp->msg);
 
         printf("\n----------------------------\n\n");
 
         struct msg_header decmhead2 = deserialize_packet(data2);
         printf("size: %d\ncount: %d\nids[0]: %d\n", decmhead2.size, decmhead2.count, decmhead2.ids[0]);
-        struct msg_computer* mcp2 = decmhead2.data[0];
-        printf("uptime: %d\nupdate: %d\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mcp2->uptime, mcp2->update, mcp2->distance, mcp2->hostname_count, mcp2->hostnames[0], mcp2->name, mcp2->msg);
+        struct msg_computer* mcp2 = (struct msg_computer*)decmhead2.data[0];
+        printf("uptime: %llu\nupdate: %llu\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mcp2->uptime, mcp2->update, mcp2->distance, mcp2->hostname_count, mcp2->hostnames[0], mcp2->name, mcp2->msg);
 
         //Free data from the manual generation
         free(mhead.ids);
