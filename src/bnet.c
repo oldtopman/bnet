@@ -79,6 +79,40 @@ void free_packet(struct msg_header* mhead)
         free(mhead->data);
 }
 
+void copy_computer(struct msg_computer** dst_ptr, struct msg_computer* src)
+{
+        *dst_ptr = NULL;
+        struct msg_computer* dst = malloc(sizeof *dst);
+        *dst = *src;
+
+        dst->name = malloc(strlen(src->name) + 1);
+        dst->msg = malloc(strlen(src->msg) + 1);
+        dst->hostnames = malloc((sizeof dst->hostnames) * dst->hostname_count);
+        if(dst->name == NULL || dst->msg == NULL ||dst->hostnames == NULL){
+                free(dst->name);
+                free(dst->msg);
+                free(dst->hostnames);
+                return;
+        }
+
+        memcpy(dst->name, src->name, strlen(src->name) + 1);
+        memcpy(dst->msg, src->msg, strlen(src->msg) + 1);
+        for(uint16_t i = 0; i < src->hostname_count; i++){
+                dst->hostnames[i] = malloc(strlen(src->hostnames[i]) + 1);
+                if(dst->hostnames[i] == NULL){
+                        for(uint16_t j = i + 1; j > 0; j--){
+                                free(dst->hostnames[j - 1]);
+                        }
+                        free(dst->hostnames);
+                        return;
+                }
+                memcpy(dst->hostnames[i], src->hostnames[i], strlen(src->hostnames[i]) + 1);
+        }
+
+        *dst_ptr = dst;
+}
+        
+
 size_t serialize_computer(char** dst, struct msg_computer* src)
 {
         size_t hcount = src->hostname_count;
@@ -307,6 +341,64 @@ struct msg_header deserialize_packet(char* data)
         return mhead;
 }
 
+size_t merge_computers(
+                struct msg_computer** dst[],
+                struct msg_computer* src1[], size_t count1,
+                struct msg_computer* src2[], size_t count2)
+{
+        //Input sanitization.
+        if(dst == NULL || src1 == NULL || src2 == NULL || count1 == 0 || count2 == 0){
+                return 0;
+        }
+
+        size_t tcount = count1 + count2;
+        size_t ucount = tcount;
+        struct msg_computer** comps = malloc( (sizeof comps) * tcount);
+
+        //Build list of computers
+        if(comps == NULL){
+                return 0;
+        }
+        for(size_t i = 0; i < count1; i++){
+                comps[i] = src1[i];
+        }
+        for(size_t i = 0; i < count2; i++){
+                comps[i+count1] = src2[i];
+        }
+
+        //Null any duplicates.
+        for(size_t i = 0; i < tcount; i++){
+                for(size_t j = (i + 1); j < tcount; j++){
+                        if(comps[i] != NULL && comps[j] != NULL){
+                                if(strcmp(comps[i]->name, comps[j]->name) == 0){
+                                        if(comps[i]->update < comps[j]->update){
+                                                comps[i] = comps[j];
+                                        }
+                                        comps[j] = NULL;
+                                        ucount--;
+                                }
+                        }
+                }
+        }
+
+        //Build combined list.
+        size_t counter = 0;
+        struct msg_computer** final_comps = malloc( (sizeof final_comps) * ucount);
+        if(final_comps == NULL){
+                free(comps);
+                return 0;
+        }
+        for(size_t i = 0; i < tcount; i++){
+                if(comps[i] != NULL){
+                        copy_computer(&final_comps[counter++], comps[i]);
+                }
+        }
+        
+        //Both counter and ucount should be identical.
+        *dst = final_comps;
+        return ucount;
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -398,6 +490,22 @@ int main(int argc, char* argv[])
         struct msg_computer* mcp2 = (struct msg_computer*)decmhead2.data[0];
         printf("uptime: %llu\nupdate: %llu\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mcp2->uptime, mcp2->update, mcp2->distance, mcp2->hostname_count, mcp2->hostnames[0], mcp2->name, mcp2->msg);
 
+        struct msg_computer** mergedcomps;
+        struct msg_computer** dblmc;
+        struct msg_computer* mcpa1[] = {mcp};
+        struct msg_computer* mcpa2[] = {mcp2};
+        size_t mergedcount = merge_computers(&mergedcomps, mcpa1, 1, mcpa2, 1);
+        size_t dblmcount = merge_computers(&dblmc, mergedcomps, mergedcount, mcpa1, 1);
+        printf("\n==========================\n\n");
+        for(size_t i = 0; i < mergedcount; i++){
+                printf("===\n");
+                printf("uptime: %llu\nupdate: %llu\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", mergedcomps[i]->uptime, mergedcomps[i]->update, mergedcomps[i]->distance, mergedcomps[i]->hostname_count, mergedcomps[i]->hostnames[0], mergedcomps[i]->name, mergedcomps[i]->msg);
+        }
+        printf("\n==========================\n\n");
+        for(size_t i = 0; i < dblmcount; i++){
+                printf("===\n");
+                printf("uptime: %llu\nupdate: %llu\ndistance: %d\nhostname_count: %d\nhostnames[0]: %s\nname: %s\nmsg: %s\n", dblmc[i]->uptime, dblmc[i]->update, dblmc[i]->distance, dblmc[i]->hostname_count, dblmc[i]->hostnames[0], dblmc[i]->name, dblmc[i]->msg);
+        }
         //Free data from the manual generation
         free(mhead.ids);
         free(mhead2.ids);
