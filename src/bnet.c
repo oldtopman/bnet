@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
 
 #ifdef __linux__
 #ifndef _BSD_SOURCE
@@ -10,6 +11,8 @@
 #include <endian.h>
 #define ntohll(x) be64toh(x)
 #define htonll(x) htobe64(x)
+#elif __APPLE__ //This could be expanded to include *BSD as well.
+#include <sys/sysctl.h>
 #endif
 
 //If you change these, you need to update the serialization functions as well!!!
@@ -399,9 +402,71 @@ size_t merge_computers(
         return ucount;
 }
 
+struct msg_computer generate_this_computer(size_t name_count, char* names[])
+{
+        struct msg_computer comp;
+        comp.uptime = 0;
+        comp.update = 0;
+        comp.distance = 0;
+        comp.hostname_count = name_count - 2;
+        if(name_count < 3 || names == NULL){
+                comp.hostname_count = 0;
+                return comp;
+        }
+
+        //Write strings.
+        comp.name = malloc(strlen(names[0]) + 1);
+        comp.msg = malloc(strlen(names[name_count - 1]) + 1);
+        comp.hostnames = malloc((sizeof *comp.hostnames) * comp.hostname_count);
+        if(comp.name == NULL || comp.msg == NULL || comp.hostnames == NULL){
+                free(comp.name);
+                free(comp.msg);
+                free(comp.hostnames);
+                comp.hostname_count = 0;
+                return comp;
+        }
+
+        strcpy(comp.name, names[0]);
+        strcpy(comp.msg, names[name_count - 1]);
+        for(size_t i = 0; i < comp.hostname_count; i++){
+                comp.hostnames[i] = malloc(strlen(names[i + 1]));
+                if(comp.hostnames[i] == NULL){
+                        for(size_t j = i + 1; j > 0; j--){
+                                free(comp.hostnames[j - 1]);
+                        }
+                        free(comp.hostnames);
+                        free(comp.name);
+                        free(comp.msg);
+                        comp.hostname_count = 0;
+                        return comp;
+                }
+                strcpy(comp.hostnames[i], names[i + 1]);
+        }
+
+        //Uptime and current time.
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        comp.update = tv.tv_sec;
+#ifdef __linux__
+        //get uptime in linux.
+#error Get linux uptime.
+#elif __APPLE__
+        size_t len = sizeof tv;
+        sysctlbyname("kern.boottime", &tv, &len, NULL, 0);
+        comp.uptime = comp.update - tv.tv_sec;
+#endif
+
+        return comp;
+}
 
 int main(int argc, char* argv[])
 {
+        if(argc < 4){
+                printf("Needs 3+ arguments.\n");
+                printf("    bnet NAME HOSTNAMES MESSAGE\n");
+                return 1;
+        }
+        struct msg_computer this_comp = generate_this_computer(argc - 1, argv + 1);
         //vars for building data.
         size_t offset = 0;
         uint16_t size = 0;
@@ -494,8 +559,9 @@ int main(int argc, char* argv[])
         struct msg_computer** dblmc;
         struct msg_computer* mcpa1[] = {mcp};
         struct msg_computer* mcpa2[] = {mcp2};
+        struct msg_computer* mcpa[] = {&this_comp};
         size_t mergedcount = merge_computers(&mergedcomps, mcpa1, 1, mcpa2, 1);
-        size_t dblmcount = merge_computers(&dblmc, mergedcomps, mergedcount, mcpa1, 1);
+        size_t dblmcount = merge_computers(&dblmc, mergedcomps, mergedcount, mcpa, 1);
         printf("\n==========================\n\n");
         for(size_t i = 0; i < mergedcount; i++){
                 printf("===\n");
